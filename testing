@@ -1,0 +1,66 @@
+import requests
+import pandas as pd
+import io
+import sqlite3
+import os
+
+# Inställningar
+URL = "http://schizoakustik.se/köksglädje/transactions.csv"
+DB_NAME = "koksgladje.db"
+
+def run_koksgladje_etl():
+    print("--- Startar ETL-processen ---")
+    
+    try:
+        # 1. HÄMTA DATA (Steg 1)
+        response = requests.get(URL, timeout=10)
+        response.raise_for_status()
+        df = pd.read_csv(io.StringIO(response.text))
+        print(f"Hämtade {len(df)} rader från webben.")
+
+        # 4. STANDARDISERA (Steg 4)
+        # Vi gör om datumet till ett riktigt datumformat och rensar bort eventuella fel
+        df['TransactionDate'] = pd.to_datetime(df['TransactionDate'])
+        # Se till att siffror behandlas som siffror
+        df['TotalAmount'] = pd.to_numeric(df['TotalAmount'], errors='coerce')
+        
+        # 3. KONTROLLERA NY DATA (Steg 3)
+        # Vi ansluter till DB för att se vad som redan finns
+        conn = sqlite3.connect(DB_NAME)
+        
+        # Skapa tabellen om det är första gången vi kör
+        conn.execute("CREATE TABLE IF NOT EXISTS Transactions (TransactionID INTEGER PRIMARY KEY, TransactionDate TIMESTAMP, CustomerID INTEGER, TotalAmount REAL)")
+        
+        latest_date_query = "SELECT MAX(TransactionDate) FROM Transactions"
+        res = pd.read_sql(latest_date_query, conn).iloc[0,0]
+        
+        if res:
+            latest_db_date = pd.to_datetime(res)
+            print(f"Senaste datum i databasen: {latest_db_date}")
+            df = df[df['TransactionDate'] > latest_db_date]
+        
+        if df.empty:
+            print("Ingen ny data att lägga till. Avbryter.")
+            conn.close()
+            return
+
+        # 2. NORMALISERING (Steg 2)
+        # Tabell 1: Transactions (Huvuddata)
+        transactions_df = df[['TransactionID', 'TransactionDate', 'CustomerID', 'TotalAmount']].drop_duplicates()
+        
+        # Tabell 2: TransactionDetails (Här kan ni lägga till fler kolumner om de finns i CSV:n)
+        # Exempel: details_df = df[['TransactionID', 'ProductID', 'Quantity']]
+        # Just nu sparar vi bara transaktionerna för att visa flödet.
+
+        # 5. SPARA TILL SQLITE (Steg 5)
+        transactions_df.to_sql('Transactions', conn, if_exists='append', index=False)
+        print(f"Lade till {len(transactions_df)} nya unika transaktioner i databasen.")
+        
+        conn.close()
+        print("--- ETL-processen klar! ---")
+
+    except Exception as e:
+        print(f"Ett fel uppstod: {e}")
+
+if __name__ == "__main__":
+    run_koksgladje_etl()
