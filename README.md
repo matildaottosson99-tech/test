@@ -1,5 +1,5 @@
 Projektuppgift: Automatiserad data-pipeline 🚀
-Kurs: Data Science | Grupp: [Namn på gruppmedlemmar]
+Kurs: Data Science | Grupp: Girly pop
 
 Detta projekt bygger en automatiserad datapipeline som hämtar dagliga transaktioner, normaliserar datan och lagrar den i en SQLite-databas. Datan visualiseras sedan i en Jupyter Notebook.
 
